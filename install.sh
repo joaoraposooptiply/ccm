@@ -2,9 +2,9 @@
 set -euo pipefail
 
 # CCM installer
-# Usage: curl -fsSL https://raw.githubusercontent.com/jay-optiply/ccm/main/install.sh | bash
+# Usage: curl -fsSL https://raw.githubusercontent.com/joaoraposooptiply/ccm/main/install.sh | bash
 
-REPO="https://github.com/jay-optiply/ccm.git"
+REPO="https://github.com/joaoraposooptiply/ccm.git"
 INSTALL_DIR="${CCM_INSTALL_DIR:-$HOME/.local/share/ccm}"
 BIN_DIR="${CCM_BIN_DIR:-$HOME/.local/bin}"
 

@@ -34,14 +34,14 @@ Claude Code uses global auth (macOS Keychain + `~/.claude.json`). If you have tw
 
 ```bash
 # Clone and build
-git clone https://github.com/jay-optiply/ccm.git ~/dev/ccm
+git clone https://github.com/joaoraposooptiply/ccm.git ~/dev/ccm
 cd ~/dev/ccm
 npm install
 npm run build
 npm link
 
 # Or use the install script
-curl -fsSL https://raw.githubusercontent.com/jay-optiply/ccm/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/joaoraposooptiply/ccm/main/install.sh | bash
 ```
 
 ## Quick Start
