@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Text } from 'ink';
 import { spawn } from 'node:child_process';
+import { join } from 'node:path';
 import { useTheme } from '../state/ThemeContext.js';
 import { useApp } from '../state/AppContext.js';
 import { profileDir } from '../core/config.js';
@@ -23,7 +24,7 @@ export function Login() {
       stdio: 'inherit',
       env: {
         ...process.env,
-        HOME: dir,
+        CLAUDE_CONFIG_DIR: join(dir, '.claude'),
       },
     });
 

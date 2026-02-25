@@ -1,7 +1,7 @@
 import { join } from 'node:path';
-import { rm, symlink, lstat } from 'node:fs/promises';
+import { rm } from 'node:fs/promises';
 import { v4 as uuid } from 'uuid';
-import { CCM_DIR, REAL_HOME, profileDir } from './config.js';
+import { CCM_DIR, profileDir } from './config.js';
 import { readJson, writeJson, ensureDir } from '../utils/fs.js';
 import type { Profile } from '../state/types.js';
 
@@ -24,22 +24,10 @@ export async function createProfile(data: Pick<Profile, 'name' | 'company' | 'em
     updatedAt: now,
   };
 
-  // Create isolated dirs
+  // Create isolated config dir — CLAUDE_CONFIG_DIR will point here
   const dir = profileDir(profile.id);
   await ensureDir(dir);
   await ensureDir(join(dir, '.claude'));
-  await writeJson(join(dir, '.claude.json'), {});
-
-  // Symlink Library/Keychains so macOS Keychain works with HOME override
-  const libDir = join(dir, 'Library');
-  await ensureDir(libDir);
-  const keychainsLink = join(libDir, 'Keychains');
-  const realKeychains = join(REAL_HOME, 'Library', 'Keychains');
-  try {
-    await lstat(keychainsLink);
-  } catch {
-    await symlink(realKeychains, keychainsLink);
-  }
 
   const profiles = await loadProfiles();
   profiles.push(profile);

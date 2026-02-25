@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
-import { profileDir } from './config.js';
-import { restoreCredential } from './keychain.js';
+import { join } from 'node:path';
+import { profileDir, getActiveProfile } from './config.js';
+import { swapKeychainToProfile } from './keychain.js';
 import { touchProfile } from './profiles.js';
 
 export interface LaunchOptions {
@@ -10,11 +11,11 @@ export interface LaunchOptions {
 }
 
 export async function launchClaude({ profileId, args = [], cwd }: LaunchOptions): Promise<number> {
-  // Restore this profile's credential into the Keychain
-  const restored = await restoreCredential(profileId);
-  if (!restored) {
-    throw new Error('No backed-up credential found. Run login first.');
-  }
+  // Swap keychain to target profile (auto-login if needed)
+  const active = await getActiveProfile();
+  await swapKeychainToProfile(profileId, {
+    currentProfileId: active?.profileId !== profileId ? active?.profileId : undefined,
+  });
 
   await touchProfile(profileId);
 
@@ -26,7 +27,7 @@ export async function launchClaude({ profileId, args = [], cwd }: LaunchOptions)
       cwd,
       env: {
         ...process.env,
-        HOME: dir,
+        CLAUDE_CONFIG_DIR: join(dir, '.claude'),
       },
     });
 

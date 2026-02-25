@@ -33,6 +33,7 @@ export function profileDir(profileId: string): string {
 interface ActiveProfile {
   profileId: string;
   profileName: string;
+  configDir: string;
   activatedAt: string;
 }
 
@@ -46,6 +47,7 @@ export async function setActiveProfile(profileId: string, profileName: string): 
   await writeJson(ACTIVE_PATH, {
     profileId,
     profileName,
+    configDir: join(profileDir(profileId), '.claude'),
     activatedAt: new Date().toISOString(),
   });
 }

@@ -7,7 +7,7 @@ import { loadConfig, getActiveProfile, setActiveProfile } from './core/config.js
 import { loadProfiles } from './core/profiles.js';
 import { launchClaude } from './core/launcher.js';
 import { checkAuthStatus } from './core/auth-status.js';
-import { hasBackedUpCredential, restoreCredential } from './core/keychain.js';
+import { hasBackedUpCredential, swapKeychainToProfile, runClaudeAuthLogin, backupCredential, restoreCredential } from './core/keychain.js';
 import { pendingAction, type PendingAction } from './state/actions.js';
 import type { ThemeName, Screen } from './state/types.js';
 
@@ -61,22 +61,28 @@ async function main() {
 ${marker} — per-terminal profile tracking
 ccm() {
   if [[ "$1" == "use" || "$1" == "activate" ]]; then
-    local output
-    output=$(command ccm "$@" 2>&1)
+    command ccm "$@"
     local code=$?
-    echo "$output"
-    local match
-    match=$(echo "$output" | grep -o 'Active profile: .*' | sed 's/Active profile: //')
-    [[ -n "$match" ]] && export CCM_PROFILE="$match"
+    if [[ $code -eq 0 && -f "$HOME/.ccm/active.json" ]]; then
+      local name config_dir
+      name=$(python3 -c "import json; print(json.load(open('$HOME/.ccm/active.json'))['profileName'])" 2>/dev/null)
+      config_dir=$(python3 -c "import json; print(json.load(open('$HOME/.ccm/active.json')).get('configDir',''))" 2>/dev/null)
+      [[ -n "$name" ]] && export CCM_PROFILE="$name"
+      [[ -n "$config_dir" ]] && export CLAUDE_CONFIG_DIR="$config_dir"
+    fi
+    unset CLAUDE_CODE_OAUTH_TOKEN
     return $code
   else
     command ccm "$@"
     local code=$?
     if [[ -f "$HOME/.ccm/active.json" ]]; then
-      local name
+      local name config_dir
       name=$(python3 -c "import json; print(json.load(open('$HOME/.ccm/active.json'))['profileName'])" 2>/dev/null)
+      config_dir=$(python3 -c "import json; print(json.load(open('$HOME/.ccm/active.json')).get('configDir',''))" 2>/dev/null)
       [[ -n "$name" ]] && export CCM_PROFILE="$name"
+      [[ -n "$config_dir" ]] && export CLAUDE_CONFIG_DIR="$config_dir"
     fi
+    unset CLAUDE_CODE_OAUTH_TOKEN
     return $code
   fi
 }
@@ -84,8 +90,10 @@ ccm_prompt_info() {
   [[ -n "$CCM_PROFILE" ]] && echo "%F{magenta}[$CCM_PROFILE]%f "
 }
 if [[ -f "$HOME/.ccm/active.json" && -z "$CCM_PROFILE" ]]; then
-  CCM_PROFILE=$(python3 -c "import json; print(json.load(open('$HOME/.ccm/active.json'))['profileName'])" 2>/dev/null)
+  CCM_PROFILE=$(python3 -c "import json; d=json.load(open('$HOME/.ccm/active.json')); print(d['profileName'])" 2>/dev/null)
+  CLAUDE_CONFIG_DIR=$(python3 -c "import json; d=json.load(open('$HOME/.ccm/active.json')); print(d.get('configDir',''))" 2>/dev/null)
   [[ -n "$CCM_PROFILE" ]] && export CCM_PROFILE
+  [[ -n "$CLAUDE_CONFIG_DIR" ]] && export CLAUDE_CONFIG_DIR
 fi
 PROMPT='$(ccm_prompt_info)'"$PROMPT"
 `;
@@ -179,14 +187,12 @@ PROMPT='$(ccm_prompt_info)'"$PROMPT"
       process.exit(1);
       return;
     }
-    const ok = await restoreCredential(profile.id);
-    if (ok) {
-      await setActiveProfile(profile.id, profile.name);
-      console.log(`Active profile: ${profile.name}`);
-    } else {
-      console.error(`No backed-up credential for ${profile.name}. Run \`ccm login ${profile.name}\` first.`);
-      process.exit(1);
-    }
+    const active = await getActiveProfile();
+    await swapKeychainToProfile(profile.id, {
+      currentProfileId: active?.profileId !== profile.id ? active?.profileId : undefined,
+    });
+    await setActiveProfile(profile.id, profile.name);
+    console.log(`Active profile: ${profile.name}`);
     return;
   }
 
@@ -203,23 +209,15 @@ PROMPT='$(ccm_prompt_info)'"$PROMPT"
       process.exit(1);
       return;
     }
-    const { spawn } = await import('node:child_process');
-    const { profileDir } = await import('./core/config.js');
-    const { backupCredential } = await import('./core/keychain.js');
-    const dir = profileDir(profile.id);
-
-    const code = await new Promise<number>((resolve, reject) => {
-      const child = spawn('claude', ['auth', 'login'], {
-        stdio: 'inherit',
-        env: { ...process.env, HOME: dir },
-      });
-      child.on('error', reject);
-      child.on('exit', (c: number | null) => resolve(c ?? 1));
-    });
-
+    const code = await runClaudeAuthLogin(profile.id);
     if (code === 0) {
       const ok = await backupCredential(profile.id);
-      console.log(ok ? `Credential backed up for ${profile.name}.` : 'Login done but no credential found to back up.');
+      if (ok) {
+        await restoreCredential(profile.id);
+        console.log(`Credential backed up for ${profile.name}.`);
+      } else {
+        console.log('Login done but no credential found to back up.');
+      }
     } else {
       console.error('Login cancelled or failed.');
       process.exit(1);
@@ -265,35 +263,30 @@ PROMPT='$(ccm_prompt_info)'"$PROMPT"
     }
 
     if (action.type === 'activate') {
-      const ok = await restoreCredential(action.profileId);
-      if (ok) {
+      try {
+        const active = await getActiveProfile();
+        await swapKeychainToProfile(action.profileId, {
+          currentProfileId: active?.profileId !== action.profileId ? active?.profileId : undefined,
+        });
         await setActiveProfile(action.profileId, action.profileName);
-        console.log(`\n  Active profile: ${action.profileName}\n  Credential swapped. Any CLI tool now uses this account.\n`);
-      } else {
-        console.error(`\n  No backed-up credential for ${action.profileName}. Run login first.\n`);
+        console.log(`\n  Active profile: ${action.profileName}\n`);
+      } catch (err: unknown) {
+        console.error(`\n  ${err instanceof Error ? err.message : err}\n`);
       }
-      // Exit — user is now in their terminal with the right credential
+      // Exit — shell function will pick up CLAUDE_CONFIG_DIR
       break;
     }
 
     if (action.type === 'login') {
-      const { spawn } = await import('node:child_process');
-      const { profileDir } = await import('./core/config.js');
-      const { backupCredential } = await import('./core/keychain.js');
-      const dir = profileDir(action.profileId);
-
-      const code = await new Promise<number>((resolve, reject) => {
-        const child = spawn('claude', ['auth', 'login'], {
-          stdio: 'inherit',
-          env: { ...process.env, HOME: dir },
-        });
-        child.on('error', reject);
-        child.on('exit', (c: number | null) => resolve(c ?? 1));
-      });
-
+      const code = await runClaudeAuthLogin(action.profileId);
       if (code === 0) {
         const ok = await backupCredential(action.profileId);
-        console.log(ok ? 'Credential backed up.' : 'No credential to back up.');
+        if (ok) {
+          await restoreCredential(action.profileId);
+          console.log('Credential backed up and restored.');
+        } else {
+          console.log('No credential to back up.');
+        }
       }
       // Loop back to TUI
       initialScreen = undefined;

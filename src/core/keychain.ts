@@ -1,4 +1,5 @@
 import { join } from 'node:path';
+import { spawn } from 'node:child_process';
 import { execFile } from '../utils/exec.js';
 import { readJson, writeJson, fileExists } from '../utils/fs.js';
 import { profileDir } from './config.js';
@@ -97,4 +98,64 @@ export async function hasBackedUpCredential(profileId: string): Promise<boolean>
   if (!(await fileExists(credPath))) return false;
   const cred = await readJson<KeychainCredential>(credPath);
   return cred !== null && !!cred.password;
+}
+
+/** Read the raw OAuth token JSON string from a profile's backed-up credential. */
+export async function getOAuthToken(profileId: string): Promise<string | null> {
+  const credPath = join(profileDir(profileId), 'credential.json');
+  if (!(await fileExists(credPath))) return null;
+  const cred = await readJson<KeychainCredential>(credPath);
+  return cred?.password || null;
+}
+
+/** Spawn `claude auth login` with the correct CLAUDE_CONFIG_DIR for a profile. */
+export function runClaudeAuthLogin(profileId: string): Promise<number> {
+  const dir = profileDir(profileId);
+  return new Promise((resolve, reject) => {
+    const child = spawn('claude', ['auth', 'login'], {
+      stdio: 'inherit',
+      env: {
+        ...process.env,
+        CLAUDE_CONFIG_DIR: join(dir, '.claude'),
+      },
+    });
+    child.on('error', reject);
+    child.on('exit', (code: number | null) => resolve(code ?? 1));
+  });
+}
+
+/**
+ * Swap the macOS Keychain credential to the target profile.
+ * 1. Backup current Keychain → outgoing profile's credential.json
+ * 2. If target has no credential → auto-run `claude auth login` → backup result
+ * 3. Restore target's credential.json → Keychain
+ */
+export async function swapKeychainToProfile(
+  targetProfileId: string,
+  opts?: { currentProfileId?: string },
+): Promise<void> {
+  // 1. Backup current keychain to outgoing profile (if known)
+  if (opts?.currentProfileId) {
+    await backupCredential(opts.currentProfileId);
+  }
+
+  // 2. If target has no backed-up credential, auto-login
+  const hasCred = await hasBackedUpCredential(targetProfileId);
+  if (!hasCred) {
+    console.log('No credential found — launching claude auth login...');
+    const code = await runClaudeAuthLogin(targetProfileId);
+    if (code !== 0) {
+      throw new Error('Login cancelled or failed.');
+    }
+    const ok = await backupCredential(targetProfileId);
+    if (!ok) {
+      throw new Error('Login completed but no credential found to back up.');
+    }
+  }
+
+  // 3. Restore target credential to Keychain
+  const restored = await restoreCredential(targetProfileId);
+  if (!restored) {
+    throw new Error(`Failed to restore credential for profile.`);
+  }
 }
