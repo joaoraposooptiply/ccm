@@ -1,0 +1,35 @@
+{
+  "name": "ccm",
+  "version": "1.0.0",
+  "description": "CCM — multi-profile credential switching TUI for Claude Code and CLI",
+  "type": "module",
+  "bin": {
+    "ccm": "./bin/ccm.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc && node bin/ccm.js",
+    "watch": "tsc --watch"
+  },
+  "keywords": [
+    "claude",
+    "cli",
+    "tui",
+    "profile-manager"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@inkjs/ui": "^2.0.0",
+    "chalk": "^5.6.2",
+    "ink": "^6.8.0",
+    "meow": "^14.1.0",
+    "react": "^19.2.4",
+    "uuid": "^13.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.3.0",
+    "@types/react": "^19.2.14",
+    "@types/uuid": "^10.0.0",
+    "typescript": "^5.9.3"
+  }
+}
