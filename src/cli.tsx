@@ -21,6 +21,7 @@ const cli = meow(`
     $ ccm status               Show credential status
     $ ccm login <name>         Run claude auth login for profile
     $ ccm add                  Add profile via TUI
+    $ ccm init                 Add prompt integration to ~/.zshrc
 
   Options
     --theme   Theme: midnight, aura, minimal
@@ -42,6 +43,38 @@ async function main() {
   }
 
   // Non-TUI commands
+  if (command === 'init') {
+    const { homedir } = await import('node:os');
+    const { readFile, appendFile } = await import('node:fs/promises');
+    const rcPath = `${homedir()}/.zshrc`;
+    const marker = '# CCM prompt integration';
+
+    let rc = '';
+    try { rc = await readFile(rcPath, 'utf8'); } catch {}
+
+    if (rc.includes(marker)) {
+      console.log('CCM prompt integration already installed in ~/.zshrc');
+      return;
+    }
+
+    const snippet = `
+${marker}
+ccm_prompt_info() {
+  local f="$HOME/.ccm/active.json"
+  [[ -f "$f" ]] || return
+  local name
+  name=$(python3 -c "import json; print(json.load(open('$f'))['profileName'])" 2>/dev/null) || return
+  echo "%F{magenta}[$name]%f "
+}
+PROMPT='$(ccm_prompt_info)'"$PROMPT"
+`;
+
+    await appendFile(rcPath, snippet);
+    console.log('Added CCM prompt integration to ~/.zshrc');
+    console.log('Run `source ~/.zshrc` or open a new terminal tab to activate.');
+    return;
+  }
+
   if (command === 'whoami') {
     const active = await getActiveProfile();
     if (active) {
