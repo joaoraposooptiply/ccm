@@ -58,14 +58,35 @@ async function main() {
     }
 
     const snippet = `
-${marker}
-ccm_prompt_info() {
-  local f="$HOME/.ccm/active.json"
-  [[ -f "$f" ]] || return
-  local name
-  name=$(python3 -c "import json; print(json.load(open('$f'))['profileName'])" 2>/dev/null) || return
-  echo "%F{magenta}[$name]%f "
+${marker} — per-terminal profile tracking
+ccm() {
+  if [[ "$1" == "use" || "$1" == "activate" ]]; then
+    local output
+    output=$(command ccm "$@" 2>&1)
+    local code=$?
+    echo "$output"
+    local match
+    match=$(echo "$output" | grep -o 'Active profile: .*' | sed 's/Active profile: //')
+    [[ -n "$match" ]] && export CCM_PROFILE="$match"
+    return $code
+  else
+    command ccm "$@"
+    local code=$?
+    if [[ -f "$HOME/.ccm/active.json" ]]; then
+      local name
+      name=$(python3 -c "import json; print(json.load(open('$HOME/.ccm/active.json'))['profileName'])" 2>/dev/null)
+      [[ -n "$name" ]] && export CCM_PROFILE="$name"
+    fi
+    return $code
+  fi
 }
+ccm_prompt_info() {
+  [[ -n "$CCM_PROFILE" ]] && echo "%F{magenta}[$CCM_PROFILE]%f "
+}
+if [[ -f "$HOME/.ccm/active.json" && -z "$CCM_PROFILE" ]]; then
+  CCM_PROFILE=$(python3 -c "import json; print(json.load(open('$HOME/.ccm/active.json'))['profileName'])" 2>/dev/null)
+  [[ -n "$CCM_PROFILE" ]] && export CCM_PROFILE
+fi
 PROMPT='$(ccm_prompt_info)'"$PROMPT"
 `;
 
